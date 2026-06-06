@@ -30,7 +30,11 @@ const { width, pdfUrl } = Astro.props;
 
             try {
                 // Load just enough of the document to get the first page
-                const loadingTask = pdfjsLib.getDocument({ url: pdfUrl });
+                const loadingTask = pdfjsLib.getDocument({
+                    url: pdfUrl,
+                    disableAutoFetch: true,
+                    disableStream: false,
+                });
                 const pdfDoc = await loadingTask.promise;
                 const page = await pdfDoc.getPage(1);
 
