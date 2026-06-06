@@ -240,7 +240,12 @@ const { pdfUrl } = Astro.props;
             try {
                 const loadingTask = pdfjsLib.getDocument({
                     url: this.pdfUrl,
-                    disableFontFace: false
+                    disableFontFace: false,
+                    disableAutoFetch: true,
+                    disableStream: true,
+                    httpHeaders: {
+                        "Accept-Encoding": "identity",
+                    },
                 });
                 this.pdfDoc = await loadingTask.promise;
                 this.totalPages = this.pdfDoc.numPages;
