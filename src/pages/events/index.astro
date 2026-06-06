@@ -14,7 +14,7 @@ events.sort(
 <BaseLayout title="події">
     <div class="grid">
         {events.map((event: any) => (
-                <a class="card" href={`/events/${generateSlug(event.data.title)}`}>
+                <a class="card" href={`/inok/events/${generateSlug(event.data.title)}`}>
                     <img
                             src={event.data.coverUrl}
                             alt={event.data.title}

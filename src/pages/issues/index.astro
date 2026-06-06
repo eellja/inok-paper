@@ -10,7 +10,7 @@ const issues = await getCollection("issues");
     <div class="grid">
         {issues.map((issue: any) => (
                 <div class="card">
-                    <a href={`/issues/${issue.data.number}`}>
+                    <a href={`/inok/issues/${issue.data.number}`}>
                         <h2>Номер №{issue.data.number}</h2>
 
                         <PdfThumbnail pdfUrl={issue.data.pdfUrl} width="300px" />
