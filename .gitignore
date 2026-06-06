@@ -12,5 +12,6 @@ yarn-error.log*
 .astro
 .direnv
 .idea
+.vscode
 
 dist/
