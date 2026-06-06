@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@200..900&display=swap');
+
+:root {
+    --primary: #FFFFFF;
+    --accent: #0A417A;
+
+    --color-bg: var(--primary);
+    --color-text: var(--accent);
+
+    --font-sans: "Unbounded", system-ui, -apple-system, sans-serif;
+}
+
+body {
+    font-family: var(--font-sans);
+    font-size: 24px;
+    color: var(--color-text);
+    background: var(--color-bg);
+}
+
+h2 {
+    margin-bottom: 1rem;
+}
+
+p {
+    margin-bottom: 2rem;
+}
+
+a {
+    color: var(--accent)
+}

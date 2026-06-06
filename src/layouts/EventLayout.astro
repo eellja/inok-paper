@@ -1,0 +1,19 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+const { frontmatter } = Astro.props;
+---
+
+<BaseLayout title={frontmatter.title}>
+    <figure class="event-cover" style="margin-bottom: 32px;">
+        <img
+                src={frontmatter.coverUrl}
+                alt="Обкладинка"
+                loading="lazy"
+                width="100%"
+        />
+    </figure>
+
+    <h1>{frontmatter.title}</h1>
+
+    <slot />
+</BaseLayout>

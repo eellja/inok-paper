@@ -1,0 +1,20 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+import PdfViewer from "../components/PdfViewer.astro";
+
+const { frontmatter } = Astro.props;
+---
+
+<BaseLayout title={frontmatter.title}>
+    <h1>Номер №{frontmatter.number}</h1>
+
+    <PdfViewer pdfUrl={frontmatter.pdfUrl}></PdfViewer>
+
+    <slot />
+</BaseLayout>
+
+<style>
+    h1 {
+        margin-bottom: 32px;
+    }
+</style>

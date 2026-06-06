@@ -1,0 +1,21 @@
+---
+import { getCollection, render } from "astro:content";
+
+import IssueLayout from "../../layouts/IssueLayout.astro";
+
+export async function getStaticPaths() {
+    const issues = await getCollection("issues");
+
+    return issues.map((issue) => ({
+        params: { slug: `${issue.data.number}` },
+        props: issue,
+    }));
+}
+
+const event = Astro.props;
+const { Content } = await render(event);
+---
+
+<IssueLayout frontmatter={event.data}>
+    <Content />
+</IssueLayout>

@@ -1,0 +1,29 @@
+---
+import { getCollection } from "astro:content";
+
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { generateSlug } from "../../utils.ts";
+
+const events = await getCollection("events");
+
+events.sort(
+    (a: any, b: any) => b.data.date.getTime() - a.data.date.getTime()
+);
+---
+
+<BaseLayout title="події">
+    <div class="grid">
+        {events.map((event: any) => (
+                <a class="card" href={`/events/${generateSlug(event.data.title)}`}>
+                    <img
+                            src={event.data.coverUrl}
+                            alt={event.data.title}
+                            width="100%"
+                            style="margin-bottom: 16px;"
+                    />
+
+                    <h2>{event.data.title}</h2>
+                </a>
+        ))}
+    </div>
+</BaseLayout>

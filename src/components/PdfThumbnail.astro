@@ -1,0 +1,109 @@
+---
+interface Props {
+    pdfUrl: string;
+    width: string;
+}
+
+const { width, pdfUrl } = Astro.props;
+---
+
+<pdf-thumbnail data-pdf-url={pdfUrl}>
+    <div class="thumbnail-placeholder">
+        <div class="skeleton"></div>
+        <img class="thumbnail-img hidden" width={width} alt="Обкладинка номера" />
+    </div>
+</pdf-thumbnail>
+
+<script>
+    import * as pdfjsLib from 'pdfjs-dist';
+    import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+    class PDFThumbnail extends HTMLElement {
+        async connectedCallback() {
+            const pdfUrl = this.getAttribute('data-pdf-url');
+            if (!pdfUrl) return;
+
+            const img = this.querySelector('.thumbnail-img') as HTMLImageElement;
+            const skeleton = this.querySelector('.skeleton') as HTMLDivElement;
+
+            try {
+                // Load just enough of the document to get the first page
+                const loadingTask = pdfjsLib.getDocument({ url: pdfUrl });
+                const pdfDoc = await loadingTask.promise;
+                const page = await pdfDoc.getPage(1);
+
+                // Render at a low/medium scale since it's just a card preview
+                const viewport = page.getViewport({ scale: 0.5 });
+
+                // Create an off-screen canvas to capture the image frame
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+
+                if (ctx) {
+                    await page.render({ canvasContext: ctx, viewport }).promise;
+
+                    // Convert the canvas drawing directly to a lightweight image source string
+                    img.src = canvas.toDataURL('image/jpeg', 0.85);
+                    img.classList.remove('hidden');
+                    if (skeleton) skeleton.remove();
+                }
+            } catch (error) {
+                console.error('Error generating PDF thumbnail preview:', error);
+                if (skeleton) {
+                    skeleton.textContent = 'Preview unavailable';
+                    skeleton.classList.add('error');
+                }
+            }
+        }
+    }
+
+    if (!customElements.get('pdf-thumbnail')) {
+        customElements.define('pdf-thumbnail', PDFThumbnail);
+    }
+</script>
+
+<style>
+    .thumbnail-placeholder {
+        display: inline;
+        aspect-ratio: 1 / 1.414; /* Standard international paper ratio (A4/A5) */
+        background: #2a2a2a;
+        border-radius: 4px;
+        overflow: hidden;
+        position: relative;
+        margin-top: 12px;
+    }
+
+    .skeleton {
+        animation: loading-shimmer 1.5s infinite;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #666;
+        font-size: 0.85rem;
+    }
+
+    .thumbnail-img {
+        object-fit: cover;
+        display: block;
+        transition: opacity 0.3s ease;
+    }
+
+    .hidden {
+        opacity: 0;
+    }
+
+    .skeleton.error {
+        animation: none;
+        background: #3a1a1a;
+        color: #ff6b6b;
+    }
+
+    @keyframes loading-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+</style>

@@ -1,0 +1,28 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import PdfThumbnail from "../../components/PdfThumbnail.astro"; // Import here
+
+const issues = await getCollection("issues");
+---
+
+<BaseLayout title="архів">
+    <div class="grid">
+        {issues.map((issue: any) => (
+                <div class="card">
+                    <a href={`/issues/${issue.data.number}`}>
+                        <h2>Номер №{issue.data.number}</h2>
+
+                        <PdfThumbnail pdfUrl={issue.data.pdfUrl} width="300px" />
+                    </a>
+                </div>
+        ))}
+    </div>
+</BaseLayout>
+
+<style>
+    .card {
+        display: inline-block;
+        padding: 16px;
+    }
+</style>

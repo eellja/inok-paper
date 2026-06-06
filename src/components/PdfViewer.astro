@@ -1,0 +1,763 @@
+---
+interface Props {
+    pdfUrl: string;
+}
+
+const { pdfUrl } = Astro.props;
+---
+
+<pdf-book-viewer data-pdf-url={pdfUrl}>
+    <div class="book-container">
+        <div class="book-scene is-flat" id="book-scene">
+            <div class="book-frame" id="book-frame">
+
+                <div class="book-page left-page" id="left-page-container">
+                    <div class="page-viewport-wrapper" id="left-wrapper">
+                        <canvas id="left-canvas"></canvas>
+                        <div id="left-text-layer" class="textLayer"></div>
+                    </div>
+                </div>
+
+                <div class="book-spine"></div>
+
+                <div class="book-page right-page" id="right-page-container">
+                    <div class="page-viewport-wrapper" id="right-wrapper">
+                        <canvas id="right-canvas"></canvas>
+                        <div id="right-text-layer" class="textLayer"></div>
+                    </div>
+                </div>
+
+                <div class="flipper-leaf" id="flipper-leaf">
+                    <div class="leaf-face face-front">
+                        <div class="page-viewport-wrapper" id="flip-front-wrapper">
+                            <canvas id="flip-front-canvas"></canvas>
+                            <div id="flip-front-text-layer" class="textLayer"></div>
+                        </div>
+                    </div>
+                    <div class="leaf-face face-back">
+                        <div class="page-viewport-wrapper" id="flip-back-wrapper">
+                            <canvas id="flip-back-canvas"></canvas>
+                            <div id="flip-back-text-layer" class="textLayer"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="book-controls">
+            <button id="prev-btn" class="control-btn" disabled>&larr;</button>
+            <span id="page-info">Завантаження...</span>
+            <button id="next-btn" class="control-btn" disabled>&rarr;</button>
+        </div>
+    </div>
+</pdf-book-viewer>
+
+<script>
+    import * as pdfjsLib from 'pdfjs-dist';
+    import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+    class PDFBookViewer extends HTMLElement {
+        constructor() {
+            super();
+            this.pdfDoc = null;
+            this.currentSpreadIndex = 0;
+            this.totalPages = 0;
+            this.isAnimating = false;
+            this.pdfUrl = '';
+
+            this.prevBtn = null;
+            this.nextBtn = null;
+            this.pageInfo = null;
+            this.flipperLeaf = null;
+            this.leftPageContainer = null;
+            this.bookFrame = null;
+            this.bookScene = null;
+
+            this.targets = {
+                left: {}, right: {}, flipFront: {}, flipBack: {}
+            };
+
+            this.resizeTimeout = null;
+            this.lastMode = this.isMobileMode();
+
+            this.zoomState = {
+                scale: 1,
+                x: 0,
+                y: 0,
+                isDragging: false,
+                startX: 0,
+                startY: 0,
+                initialPinchDist: 0,
+                initialScale: 1
+            };
+        }
+
+        connectedCallback() {
+            this.pdfUrl = this.getAttribute('data-pdf-url') || '';
+            if (!this.pdfUrl) return;
+
+            this.prevBtn = this.querySelector('#prev-btn');
+            this.nextBtn = this.querySelector('#next-btn');
+            this.pageInfo = this.querySelector('#page-info');
+            this.flipperLeaf = this.querySelector('#flipper-leaf');
+            this.leftPageContainer = this.querySelector('#left-page-container');
+            this.bookFrame = this.querySelector('#book-frame');
+            this.bookScene = this.querySelector('#book-scene');
+
+            this.targets.left = {
+                canvas: this.querySelector('#left-canvas'),
+                ctx: this.querySelector('#left-canvas').getContext('2d'),
+                wrapper: this.querySelector('#left-wrapper'),
+                textLayer: this.querySelector('#left-text-layer')
+            };
+            this.targets.right = {
+                canvas: this.querySelector('#right-canvas'),
+                ctx: this.querySelector('#right-canvas').getContext('2d'),
+                wrapper: this.querySelector('#right-wrapper'),
+                textLayer: this.querySelector('#right-text-layer')
+            };
+            this.targets.flipFront = {
+                canvas: this.querySelector('#flip-front-canvas'),
+                ctx: this.querySelector('#flip-front-canvas').getContext('2d'),
+                wrapper: this.querySelector('#flip-front-wrapper'),
+                textLayer: this.querySelector('#flip-front-text-layer')
+            };
+            this.targets.flipBack = {
+                canvas: this.querySelector('#flip-back-canvas'),
+                ctx: this.querySelector('#flip-back-canvas').getContext('2d'),
+                wrapper: this.querySelector('#flip-back-wrapper'),
+                textLayer: this.querySelector('#flip-back-text-layer')
+            };
+
+            this.goPrevHandler = () => this.goPrev();
+            this.goNextHandler = () => this.goNext();
+            this.resizeHandler = () => this.handleResize();
+
+            this.loadDocument();
+            window.addEventListener('resize', this.resizeHandler);
+            this.setupMobilePanZoom();
+        }
+
+        disconnectedCallback() {
+            window.removeEventListener('resize', this.resizeHandler);
+        }
+
+        isMobileMode() {
+            return window.innerWidth < 768;
+        }
+
+        setupMobilePanZoom() {
+            const container = this.leftPageContainer;
+            if (!container) return;
+
+            container.addEventListener('touchstart', (e) => {
+                if (!this.isMobileMode()) return;
+
+                if (e.touches.length === 1) {
+                    this.zoomState.isDragging = true;
+                    this.zoomState.startX = e.touches[0].clientX - this.zoomState.x;
+                    this.zoomState.startY = e.touches[0].clientY - this.zoomState.y;
+                } else if (e.touches.length === 2) {
+                    this.zoomState.isDragging = false;
+                    this.zoomState.initialPinchDist = this.getTouchDistance(e.touches);
+                    this.zoomState.initialScale = this.zoomState.scale;
+                }
+            }, { passive: true });
+
+            container.addEventListener('touchmove', (e) => {
+                if (!this.isMobileMode()) return;
+
+                if (e.touches.length === 1 && this.zoomState.isDragging && this.zoomState.scale > 1) {
+                    this.zoomState.x = e.touches[0].clientX - this.zoomState.startX;
+                    this.zoomState.y = e.touches[0].clientY - this.zoomState.startY;
+                    this.applyMobileTransform();
+                } else if (e.touches.length === 2) {
+                    const currentDist = this.getTouchDistance(e.touches);
+                    const factor = currentDist / this.zoomState.initialPinchDist;
+                    this.zoomState.scale = Math.max(1, Math.min(4, this.zoomState.initialScale * factor));
+
+                    if (this.zoomState.scale === 1) {
+                        this.zoomState.x = 0;
+                        this.zoomState.y = 0;
+                    }
+                    this.applyMobileTransform();
+                }
+            }, { passive: true });
+
+            container.addEventListener('touchend', () => {
+                this.zoomState.isDragging = false;
+            });
+
+            container.addEventListener('wheel', (e) => {
+                if (!this.isMobileMode()) return;
+                e.preventDefault();
+
+                const zoomFactor = 0.1;
+                if (e.deltaY < 0) {
+                    this.zoomState.scale = Math.min(4, this.zoomState.scale + zoomFactor);
+                } else {
+                    this.zoomState.scale = Math.max(1, this.zoomState.scale - zoomFactor);
+                }
+
+                if (this.zoomState.scale === 1) {
+                    this.zoomState.x = 0;
+                    this.zoomState.y = 0;
+                }
+                this.applyMobileTransform();
+            }, { passive: false });
+        }
+
+        getTouchDistance(touches) {
+            return Math.hypot(
+                touches[0].clientX - touches[1].clientX,
+                touches[0].clientY - touches[1].clientY
+            );
+        }
+
+        applyMobileTransform() {
+            const wrapper = this.targets.left.wrapper;
+            if (!wrapper) return;
+
+            if (this.isMobileMode()) {
+                wrapper.style.transformOrigin = 'center center';
+                wrapper.style.transform = `translate(${this.zoomState.x}px, ${this.zoomState.y}px) scale(${this.zoomState.scale})`;
+            } else {
+                wrapper.style.transform = '';
+            }
+        }
+
+        resetMobileZoom() {
+            this.zoomState.scale = 1;
+            this.zoomState.x = 0;
+            this.zoomState.y = 0;
+            this.applyMobileTransform();
+        }
+
+        async loadDocument() {
+            try {
+                const loadingTask = pdfjsLib.getDocument({
+                    url: this.pdfUrl,
+                    disableFontFace: false
+                });
+                this.pdfDoc = await loadingTask.promise;
+                this.totalPages = this.pdfDoc.numPages;
+
+                this.prevBtn.addEventListener('click', this.goPrevHandler);
+                this.nextBtn.addEventListener('click', this.goNextHandler);
+
+                this.renderSpread();
+            } catch (error) {
+                console.error('Error loading PDF Document: ', error);
+                if (this.pageInfo) this.pageInfo.textContent = 'Помилка';
+            }
+        }
+
+        async renderSpread() {
+            if (!this.pdfDoc) return;
+
+            this.resetMobileZoom();
+
+            if (this.isMobileMode()) {
+                const pageNum = this.currentSpreadIndex + 1;
+                if (pageNum <= this.totalPages) await this.renderPage(pageNum, this.targets.left);
+                else this.clearPageData(this.targets.left);
+                this.clearPageData(this.targets.right);
+
+                if (this.prevBtn) this.prevBtn.disabled = this.currentSpreadIndex === 0 || this.isAnimating;
+                if (this.nextBtn) this.nextBtn.disabled = pageNum >= this.totalPages || this.isAnimating;
+                if (this.pageInfo) this.pageInfo.textContent = `${pageNum} з ${this.totalPages}`;
+            } else {
+                const leftPageNum = this.currentSpreadIndex * 2 + 1;
+                const rightPageNum = leftPageNum + 1;
+
+                if (leftPageNum <= this.totalPages) await this.renderPage(leftPageNum, this.targets.left);
+                else this.clearPageData(this.targets.left);
+
+                if (rightPageNum <= this.totalPages) await this.renderPage(rightPageNum, this.targets.right);
+                else this.clearPageData(this.targets.right);
+
+                if (this.prevBtn) this.prevBtn.disabled = this.currentSpreadIndex === 0 || this.isAnimating;
+                if (this.nextBtn) this.nextBtn.disabled = rightPageNum >= this.totalPages || this.isAnimating;
+                if (this.pageInfo) this.pageInfo.textContent = `${leftPageNum}-${Math.min(rightPageNum, this.totalPages)} з ${this.totalPages}`;
+            }
+        }
+
+        async renderPage(pageNum, target) {
+            if (!target.canvas) return;
+            const page = await this.pdfDoc.getPage(pageNum);
+            const unscaledViewport = page.getViewport({ scale: 1.0 });
+
+            const parentWidth = this.leftPageContainer.clientWidth;
+            const baseScale = parentWidth / unscaledViewport.width;
+
+            // HIGH-DPI DEVICE PIXEL ENGINE CONTEXT MUTATION FIX
+            const outputScale = window.devicePixelRatio || 1;
+            const viewport = page.getViewport({ scale: baseScale * 0.8 });
+
+            // Multiply backup buffer bounds while restricting standard presentation footprints
+            target.canvas.width = Math.floor(viewport.width * outputScale);
+            target.canvas.height = Math.floor(viewport.height * outputScale);
+
+            target.wrapper.style.width = `${Math.floor(viewport.width)}px`;
+            target.wrapper.style.height = `${Math.floor(viewport.height)}px`;
+            target.wrapper.style.display = 'block';
+
+            target.textLayer.innerHTML = '';
+            target.textLayer.style.width = `${Math.floor(viewport.width)}px`;
+            target.textLayer.style.height = `${Math.floor(viewport.height)}px`;
+
+            target.textLayer.style.setProperty('--total-scale-factor', `${viewport.scale}`);
+
+            // Reset standard transform metrics to account for device output ratio scale mutation
+            target.ctx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+
+            const renderContext = {
+                canvasContext: target.ctx,
+                viewport: viewport,
+            };
+
+            await page.render(renderContext).promise;
+
+            try {
+                const textContentSource = await page.streamTextContent();
+
+                const textLayerInstance = new pdfjsLib.TextLayer({
+                    textContentSource,
+                    container: target.textLayer,
+                    viewport: viewport
+                });
+
+                await textLayerInstance.render();
+
+            } catch (textError) {
+                console.error("PDF.js Text Layer Generation Failure: ", textError);
+            }
+        }
+
+        clearPageData(target) {
+            if (!target.ctx) return;
+            target.ctx.clearRect(0, 0, target.canvas.width, target.canvas.height);
+            target.textLayer.innerHTML = '';
+            target.wrapper.style.display = 'none';
+        }
+
+        async goNext() {
+            if (this.isAnimating) return;
+
+            if (this.isMobileMode()) {
+                if (this.currentSpreadIndex + 1 >= this.totalPages) return;
+                this.isAnimating = true;
+                if (this.bookScene) this.bookScene.classList.remove('is-flat');
+                this.setButtonsDisabled(true);
+                this.leftPageContainer.classList.add('page-curl-out-next');
+
+                setTimeout(async () => {
+                    this.currentSpreadIndex++;
+                    await this.renderSpread();
+                    this.leftPageContainer.classList.remove('page-curl-out-next');
+                    this.leftPageContainer.classList.add('page-curl-in-next');
+
+                    setTimeout(() => {
+                        this.leftPageContainer.classList.remove('page-curl-in-next');
+                        this.isAnimating = false;
+                        if (this.bookScene) this.bookScene.classList.add('is-flat');
+                        this.renderSpread();
+                    }, 350);
+                }, 350);
+            } else {
+                if ((this.currentSpreadIndex * 2 + 2) >= this.totalPages) return;
+                this.isAnimating = true;
+                if (this.bookScene) this.bookScene.classList.remove('is-flat');
+                this.setButtonsDisabled(true);
+
+                if (this.bookFrame) this.bookFrame.classList.add('is-flipping');
+
+                const currentLeftNum = this.currentSpreadIndex * 2 + 1;
+                const currentRightNum = currentLeftNum + 1;
+                const nextLeftNum = currentRightNum + 1;
+                const nextRightNum = nextLeftNum + 1;
+
+                await this.renderPage(currentRightNum, this.targets.flipFront);
+                if (nextLeftNum <= this.totalPages) await this.renderPage(nextLeftNum, this.targets.flipBack);
+                else this.clearPageData(this.targets.flipBack);
+
+                if (nextRightNum <= this.totalPages) await this.renderPage(nextRightNum, this.targets.right);
+
+                this.flipperLeaf.style.display = 'block';
+                this.flipperLeaf.offsetHeight;
+                this.flipperLeaf.classList.add('flipped');
+
+                setTimeout(async () => {
+                    this.currentSpreadIndex++;
+                    this.flipperLeaf.style.display = 'none';
+                    this.flipperLeaf.classList.remove('flipped');
+                    this.clearPageData(this.targets.flipFront);
+                    this.clearPageData(this.targets.flipBack);
+
+                    if (this.bookFrame) this.bookFrame.classList.remove('is-flipping');
+
+                    this.isAnimating = false;
+                    if (this.bookScene) this.bookScene.classList.add('is-flat');
+                    await this.renderSpread();
+                }, 600);
+            }
+        }
+
+        async goPrev() {
+            if (this.isAnimating || this.currentSpreadIndex <= 0) return;
+
+            if (this.isMobileMode()) {
+                this.isAnimating = true;
+                if (this.bookScene) this.bookScene.classList.remove('is-flat');
+                this.setButtonsDisabled(true);
+                this.leftPageContainer.classList.add('page-curl-out-prev');
+
+                setTimeout(async () => {
+                    this.currentSpreadIndex--;
+                    await this.renderSpread();
+                    this.leftPageContainer.classList.remove('page-curl-out-prev');
+                    this.leftPageContainer.classList.add('page-curl-in-prev');
+
+                    setTimeout(() => {
+                        this.leftPageContainer.classList.remove('page-curl-in-prev');
+                        this.isAnimating = false;
+                        if (this.bookScene) this.bookScene.classList.add('is-flat');
+                        this.renderSpread();
+                    }, 350);
+                }, 350);
+            } else {
+                this.isAnimating = true;
+                if (this.bookScene) this.bookScene.classList.remove('is-flat');
+                this.setButtonsDisabled(true);
+
+                if (this.bookFrame) this.bookFrame.classList.add('is-flipping');
+
+                const currentLeftNum = this.currentSpreadIndex * 2 + 1;
+                const prevLeftNum = currentLeftNum - 2;
+                const prevRightNum = prevLeftNum + 1;
+
+                await this.renderPage(currentLeftNum, this.targets.flipBack);
+                await this.renderPage(prevRightNum, this.targets.flipFront);
+                await this.renderPage(prevLeftNum, this.targets.left);
+
+                this.flipperLeaf.classList.add('flipped');
+                this.flipperLeaf.style.display = 'block';
+                this.flipperLeaf.offsetHeight;
+                this.flipperLeaf.classList.remove('flipped');
+
+                setTimeout(async () => {
+                    this.currentSpreadIndex--;
+                    this.flipperLeaf.style.display = 'none';
+                    this.clearPageData(this.targets.flipFront);
+                    this.clearPageData(this.targets.flipBack);
+
+                    if (this.bookFrame) this.bookFrame.classList.remove('is-flipping');
+
+                    this.isAnimating = false;
+                    if (this.bookScene) this.bookScene.classList.add('is-flat');
+                    await this.renderSpread();
+                }, 600);
+            }
+        }
+
+        setButtonsDisabled(disabled) {
+            if (this.prevBtn) this.prevBtn.disabled = disabled;
+            if (this.nextBtn) this.nextBtn.disabled = disabled;
+        }
+
+        handleResize() {
+            clearTimeout(this.resizeTimeout);
+            this.resizeTimeout = setTimeout(() => {
+                if (this.pdfDoc) {
+                    const currentMode = this.isMobileMode();
+                    if (currentMode !== this.lastMode) {
+                        if (currentMode) this.currentSpreadIndex = this.currentSpreadIndex * 2;
+                        else this.currentSpreadIndex = Math.floor(this.currentSpreadIndex / 2);
+                        this.lastMode = currentMode;
+                    }
+                    this.resetMobileZoom();
+                    this.renderSpread();
+                }
+            }, 200);
+        }
+    }
+
+    if (!customElements.get('pdf-book-viewer')) {
+        customElements.define('pdf-book-viewer', PDFBookViewer);
+    }
+</script>
+
+<style is:global>
+    @import "pdfjs-dist/web/pdf_viewer.css";
+
+    .textLayer {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        overflow: hidden !important;
+        opacity: 1 !important;
+        z-index: 20 !important;
+        pointer-events: auto !important;
+    }
+
+    .textLayer span {
+        color: transparent !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        position: absolute !important;
+    }
+
+    .textLayer ::selection {
+        background: rgba(0, 102, 255, 0.25) !important;
+    }
+
+    .book-scene {
+        width: 100%;
+        perspective: 2500px;
+        transform-style: preserve-3d;
+        pointer-events: auto !important;
+    }
+
+    .book-scene.is-flat {
+        perspective: none !important;
+        transform: none !important;
+        transform-style: flat !important;
+    }
+
+    .book-scene.is-flat .book-frame,
+    .book-scene.is-flat .book-page,
+    .book-scene.is-flat .page-viewport-wrapper {
+        transform: none !important;
+        transform-style: flat !important;
+        perspective: none !important;
+    }
+
+    .book-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-family: system-ui, sans-serif;
+        border-radius: 12px;
+        background: white;
+        color: #fff;
+        max-width: 1500px;
+        margin: 0 auto;
+    }
+
+    .book-controls {
+        display: flex;
+        align-items: center;
+        gap: 32px;
+        margin-top: 32px;
+        color: var(--accent);
+    }
+
+    .control-btn {
+        background: var(--accent);
+        color: white;
+        border: 1px solid #444;
+        padding: 10px 40px;
+        cursor: pointer;
+        font-weight: 700;
+        transition: all 0.2s ease-in-out;
+    }
+
+    .control-btn:hover:not(:disabled) {
+        background: #3a3a3a;
+    }
+
+    .control-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+    }
+
+    .book-frame {
+        display: flex;
+        position: relative;
+        background: #fff;
+        border-radius: 4px;
+        box-shadow: 0 16px 45px rgba(0,0,0,0.7);
+        width: 100%;
+        min-height: 500px;
+        overflow: visible;
+        pointer-events: auto !important;
+    }
+
+    .book-frame.is-flipping {
+        transform-style: preserve-3d !important;
+    }
+
+    .book-page {
+        flex: 1;
+        width: 50%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: #fff;
+        position: relative;
+        box-sizing: border-box;
+        z-index: 1;
+        transition: transform 0.35s ease-in-out, opacity 0.35s ease-in-out;
+        transform-style: flat !important;
+        pointer-events: auto !important;
+    }
+
+    .book-frame.is-flipping .book-page {
+        transform-style: preserve-3d !important;
+    }
+
+    .page-viewport-wrapper {
+        position: relative;
+        display: none;
+        width: 100%;
+        pointer-events: auto !important;
+        will-change: transform;
+        transition: transform 0.05s linear;
+    }
+
+    canvas {
+        display: block;
+        width: 100% !important; /* Scale to fill layout wrappers perfectly */
+        height: 100% !important;
+        position: relative;
+        z-index: 1 !important;
+        pointer-events: none !important;
+    }
+
+    .left-page { background: linear-gradient(to right, #fff 93%, #eee 100%); }
+    .right-page { background: linear-gradient(to left, #fff 93%, #eee 100%); }
+
+    .book-spine {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        transform: translateX(-50%);
+        width: 16px;
+        height: 100%;
+        background: linear-gradient(
+                to right,
+                rgba(0,0,0,0.2) 0%,
+                rgba(0,0,0,0.02) 30%,
+                rgba(0,0,0,0.02) 70%,
+                rgba(0,0,0,0.2) 100%
+        );
+        z-index: 10;
+        pointer-events: none !important;
+    }
+
+    .flipper-leaf {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 50%;
+        height: 100%;
+        transform-origin: left center;
+        transition: transform 0.6s cubic-bezier(0.645, 0.045, 0.355, 1);
+        transform-style: preserve-3d;
+        z-index: 5;
+        display: none;
+        pointer-events: none;
+    }
+
+    .flipper-leaf.flipped {
+        transform: rotateY(-180deg);
+    }
+
+    .leaf-face {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        box-sizing: border-box;
+        background: #fff;
+        backface-visibility: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .face-front {
+        z-index: 7;
+        background: linear-gradient(to left, #fff 93%, #e0e0e0 100%);
+    }
+
+    .face-back {
+        transform: rotateY(180deg);
+        background: linear-gradient(to right, #fff 93%, #e0e0e0 100%);
+    }
+
+    .page-curl-out-next {
+        transform-origin: left center;
+        transform: rotateY(-20deg) scaleX(0.95) translateX(-5%);
+        opacity: 0;
+    }
+
+    .page-curl-in-next {
+        animation: mobileCurlInNext 0.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+
+    .page-curl-out-prev {
+        transform-origin: right center;
+        transform: rotateY(20deg) scaleX(0.95) translateX(5%);
+        opacity: 0;
+    }
+
+    .page-curl-in-prev {
+        animation: mobileCurlInPrev 0.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+
+    @keyframes mobileCurlInNext {
+        from {
+            transform-origin: right center;
+            transform: rotateY(25deg) scaleX(0.9) translateX(10%);
+            opacity: 0;
+        }
+        to {
+            transform-origin: right center;
+            transform: rotateY(0deg) scaleX(1) translateX(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes mobileCurlInPrev {
+        from {
+            transform-origin: left center;
+            transform: rotateY(-25deg) scaleX(0.9) translateX(-10%);
+            opacity: 0;
+        }
+        to {
+            transform-origin: left center;
+            transform: rotateY(0deg) scaleX(1) translateX(0);
+            opacity: 1;
+        }
+    }
+
+    @media (max-width: 767px) {
+        .book-spine,
+        .right-page,
+        .flipper-leaf {
+            display: none !important;
+        }
+        .book-page {
+            width: 100% !important;
+            flex: none;
+            background: #fff;
+            overflow: hidden;
+            touch-action: none;
+        }
+        .book-frame {
+            min-height: auto;
+            background: #1a1a1a;
+        }
+    }
+</style>
