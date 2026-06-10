@@ -9,11 +9,21 @@ const { frontmatter } = Astro.props;
                 src={frontmatter.coverUrl}
                 alt="Обкладинка"
                 loading="lazy"
-                width="100%"
+                width="40%"
+                style="margin: auto; display: block;"
         />
     </figure>
 
-    <h1>{frontmatter.title}</h1>
+    <div class="text">
+        <h1>{frontmatter.title}</h1>
 
-    <slot />
+        <slot />
+    </div>
 </BaseLayout>
+
+<style>
+    .text {
+        max-width: 950px;
+        margin: auto;
+    }
+</style>

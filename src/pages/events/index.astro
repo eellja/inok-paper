@@ -15,15 +15,21 @@ events.sort(
     <div class="grid">
         {events.map((event: any) => (
                 <a class="card" href={`/inok/events/${generateSlug(event.data.title)}`}>
+                    <h2>{event.data.title}</h2>
+
                     <img
                             src={event.data.coverUrl}
                             alt={event.data.title}
-                            width="100%"
-                            style="margin-bottom: 16px;"
+                            width="300px"
                     />
-
-                    <h2>{event.data.title}</h2>
                 </a>
         ))}
     </div>
 </BaseLayout>
+
+<style>
+    .card {
+        display: inline-block;
+        padding: 16px;
+    }
+</style>

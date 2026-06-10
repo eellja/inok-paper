@@ -16,6 +16,7 @@ const issues = defineCollection({
     schema: z.object({
         number: z.number(),
         pdfUrl: z.string(),
+        coverUrl: z.string(),
     }),
 });
 

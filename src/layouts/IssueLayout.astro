@@ -8,7 +8,16 @@ const { frontmatter } = Astro.props;
 <BaseLayout title={frontmatter.title}>
     <h1>Номер №{frontmatter.number}</h1>
 
-    <PdfViewer pdfUrl={frontmatter.pdfUrl}></PdfViewer>
+    <div class="pdf-container">
+        <iframe
+                src={frontmatter.pdfUrl}
+                allowfullscreen="allowfullscreen"
+                class="fp-iframe"
+                style="border: 1px solid lightgray;"
+                width="100%"
+                height="100%">
+        </iframe>
+    </div>
 
     <slot />
 </BaseLayout>
@@ -16,5 +25,10 @@ const { frontmatter } = Astro.props;
 <style>
     h1 {
         margin-bottom: 32px;
+    }
+
+    .pdf-container {
+        width: 90vw;
+        height: 90vh;
     }
 </style>

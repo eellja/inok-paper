@@ -55,7 +55,7 @@ const { pdfUrl } = Astro.props;
 
 <script>
     import * as pdfjsLib from 'pdfjs-dist';
-    import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+    import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?worker&url';
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
