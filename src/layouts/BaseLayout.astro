@@ -10,9 +10,14 @@ const { title } = Astro.props;
 <html lang="uk">
 <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" href="/inok/favicon.ico" />
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />
+
+    <meta property="og:title" content=`Інок — ${title}` />
+    <meta property="og:description" content="Студентський художньо-публіцистичний вісник" />
+    <meta property="og:image" content="/inok/og-image.png" />
+
     <title>{title}</title>
 </head>
 <body>
